@@ -1,4 +1,4 @@
-top10k<- read.csv("C:/Users/fabio/Downloads/top10k_spotify.csv")
+top10k<- read.csv("top10k_spotify.csv")
 
 #trovare l'osservazione con più generi
 a<-c()
@@ -35,8 +35,8 @@ write.csv(generi_album, "generi_canzone.csv")
 generi2<-cbind(top10k[,c(2,4,6,9)],generi)
 write.csv(generi2, "generi2.csv")
 
-radio2<- read.csv("C:/Users/fabio/Downloads/radio_stations.csv")
-radio <- read.csv("C:/Users/fabio/Downloads/radio_metadata.csv")
+radio2<- read.csv("radio_stations.csv")
+radio <- read.csv("radio_metadata.csv")
 generi <- read.csv("~/generi2.csv", row.names=1)
 library(stringr)
 a<-c()
@@ -145,7 +145,7 @@ canzoniconcorrispondenza<-which(a>0)
 listacanzoni2$indice<-c(1:6643)
 listaok<-listacanzoni2[c(canzoniconcorrispondenza)]
 nome_canzone_listaok<-cg$Track.Name[canzoniconcorrispondenza]
-top10k_spotify <- read.csv("C:/Users/fabio/Downloads/top10k_spotify.csv")
+top10k_spotify <- read.csv("top10k_spotify.csv")
 trackURI_listaok<-top10k_spotify$Track.URI[canzoniconcorrispondenza]
 artist_uri_listaok<-top10k_spotify$Artist.URI.s.[canzoniconcorrispondenza]
 artist_nome_listaok<-top10k_spotify$Artist.Name.s.[canzoniconcorrispondenza]
