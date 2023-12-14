@@ -1,0 +1,332 @@
+---
+title: "Project Foundations of Probability and Statistics"
+output:
+  html_document: default
+  pdf_document: default
+date: "2022-11-11"
+---
+
+Gianni Eduard Balbin Canchanya (901609) Aldo Barletta (897742) Tariq Baghrous (904027)
+
+# Time Series
+
+We want to analyze a time series that is about the loan trends in habitations in Italy from January 2003 to April 2022.
+
+The project consists of a descriptive analysis of the data and of an estimate of a simple regression, added to predicted values, and of a multiple regression.
+
+#### Packages and libraries
+
+First we install the packages that are going to be used for the project and we load the libraries.
+
+```{r message=FALSE, warning=FALSE}
+#install.packages("readxl")
+#install.packages("tidyverse")
+#install.packages("fungible")
+#install.packages("moments")
+#install.packages("tseries")
+#install.packages("forecast")
+library(readxl)
+library(fungible)
+library(moments)
+library(tseries)
+library(tidyverse)
+library(forecast)
+```
+
+## Introduction to the data
+
+We load the data onto R and we convert the "Data" variable from "Char" format to "Date" format.
+
+```{r message=FALSE, warning=FALSE}
+dati <- read_excel("datiTesi.xlsx")
+dataConGiorno <- paste0(dati$Data, "-01")
+dati$Data <- as.Date(x = dataConGiorno, format = "%Y-%b-%d")
+dati
+```
+
+The table shows two columns: Data and Valore. The dataset, therefore, shows the dates of each month from the year 2003 to the year 2022 with the values in millions of the loans made by the Italian banks.
+
+In order to be more clear, we plot the time series.
+
+```{r warning=FALSE}
+qplot(x = dati$Data, y = dati$Valore, group = 1, xlab = "Date", ylab = "Value", geom = "path") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_x_date(date_labels = "%Y-%b", breaks = "1 year") + geom_line()
+```
+
+We notice that the time series has a seasonal trend for each year and, most importantly, that between 2012 and 2015 there has been a drop in loans, probably due to the 2008 speculative bubble of the US that later hit European countries as well.
+
+## Descriptive analysis
+
+For the descriptive analysis we created and used the following functions:
+
+```{r}
+#mean 
+media <- function(x){
+  sum(x)/length(x)
+}
+#variance
+varianza <- function(x){
+  ((media(x^2) - media(x)^2)*length(x))/(length(x)-1)
+}
+#standard deviation
+devStandard <- function(x){
+  varianza(x)^0.5
+}
+#minimum
+minimo <- function(x){
+  sort(x)[1]
+}
+#first quartile
+primoQ <- function(x){
+  if(length(x)%%2 == 0){
+    sort(x)[length(x)/4]
+  }else{
+    sort(x)[round((length(x)/4))+1]
+  }
+}
+#median
+mediana <- function(x){
+  if(length(x)%%2 == 0){
+    (sort(x)[length(x)/2]+sort(x)[(length(x)/2)+1])/2
+  }else{
+    sort(x)[round((length(x))/2)]
+  }
+}
+#third quartile
+terzoQ <- function(x){
+  if(length(x)%%2 == 0){
+    sort(x)[(length(x)/4)*3]
+  }else{
+    sort(x)[round((length(x+1)/4))+round((length(x+1)/2))]
+  }
+}
+#maximum
+massimo <- function(x){
+  sort(x)[length(x)]
+}
+#range of variation
+rvar <- function(x){
+ massimo(x) - minimo(x) 
+}
+#interquartile range
+rquantile <- function(x){
+  terzoQ(x)-primoQ(x)
+}
+#median absolute deviation
+MAD <- function(x) {
+  mediana(abs(x - mediana(x)))
+}
+#Variation coefficient  
+coefVar <- function(x){
+  devStandard(x)/media(x)
+}
+```
+
+Now we compute the values of our analysis on the dataset:
+
+```{r echo=FALSE}
+sprintf("Mean: %g", media(dati$Valore))
+sprintf("Variance: %f", varianza(dati$Valore))
+sprintf("Standard deviation: %g", devStandard(dati$Valore))
+sprintf("Kurtosis: %g", kurt(dati$Valore))
+sprintf("Symmetry: %g", skewness(dati$Valore))
+sprintf("Minimum: %g", minimo(dati$Valore))
+sprintf("First quartile: %g", primoQ(dati$Valore))
+sprintf("Median: %g", mediana(dati$Valore))
+sprintf("Third quartile: %g", terzoQ(dati$Valore))
+sprintf("Maximum: %g", massimo(dati$Valore))
+sprintf("Range of variation: %g", rvar(dati$Valore))
+sprintf("Interquartile range : %g", rquantile(dati$Valore))
+sprintf("Median absolute deviations: %g", MAD(dati$Valore))
+sprintf("Coefficient of variation: %g", coefVar(dati$Valore))
+```
+
+We have also plotted the histogram of the frequence and the boxplot.
+
+```{r echo=FALSE}
+par(mfrow = c(1,2))
+hist(dati$Valore, xlab = "Value", ylab = "Frequence", main = "Histogram of frequence", breaks = 9)
+boxplot(dati$Valore, main = "Boxplot")
+```
+
+We can already assume from the mean and the median values a slight asymmetry of the distribution, in particular it's left skewed, because the mean is less than the median. This hypothesis can be further confirmed by the computation of the function "skewness" in R. From the coefficient of variation's value that we have got, it is possible to affirm that the data variability is restrained, therefore the mean can be considered a good indicator.
+
+### Dickey-Fuller test and prime difference function
+
+The augmented Dickey-Fuller test (ADF) verifies, under the null hypothesis, the not stationarity of the sample against the alternative hypothesis that it is stationary. The stationarity condition allows us to predict future values but, in order to do so, the prediction must not be far from the past, otherwise the results would be unreliable.
+
+```{r}
+adf.test(dati$Valore)
+```
+
+In this case the test confirms that the sample is not stationary, because the p-value is equal to 74% at a significance level which is 5%. To solve this problem we use the prime difference function, that removes the stochastic trend. After we used this method, we have computed again the Dickey-Fuller test:
+
+```{r}
+# prime differences
+dp <- diff(dati$Valore)
+# new Dickey-Fuller test
+adf.test(dp)
+```
+
+We notice, then, that the p-value is equal to 1%, therefore we decline the null hypothesis at significance level of 5% and we confirm that the new dataset is not stationary.
+
+Then we plot again the new dataset of our time series:
+
+```{r warning=FALSE}
+qplot(x = dati$Data[2:232], y = dp, group = 1, xlab = "Date", ylab = "Value", geom = "path") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_x_date(date_labels = "%Y-%b", breaks = "1 year") + geom_line()
+```
+
+## Descriptive analysis updated data
+
+The new values of the descriptive analysis of the new dataset are as it follows:
+
+```{r echo=FALSE}
+sprintf("Mean: %g", round(media(dp), digits = 2))
+sprintf("Variance: %f", varianza(dp))
+sprintf("Standard deviazione: %g", devStandard(dp))
+sprintf("Curtosis: %g", kurt(dp))
+sprintf("Symmetry: %g", skewness(dp))
+sprintf("Minimum: %g", minimo(dp))
+sprintf("First quartile: %g", primoQ(dp))
+sprintf("Median: %g", mediana(dp))
+sprintf("Third quartile: %g", terzoQ(dp))
+sprintf("Maximum: %g", massimo(dp))
+sprintf("Range of variation: %g", rvar(dp))
+sprintf("Interquartile range: %g", rquantile(dp))
+sprintf("Median absolute deviations: %g", MAD(dp))
+sprintf("Coefficient of variation: %g", coefVar(dp))
+```
+
+We have also plotted the updated histogram of the frequence and the updated boxplot.
+
+```{r echo=FALSE}
+par(mfrow = c(1,2))
+hist(dp, xlab = "Value", ylab = "Frequence", main = "Histogram of frequence", breaks = 10)
+boxplot(dp, main = "Boxplot")
+```
+
+A really high coefficient of variation implies a relatively big value of the standard deviation as compared to the mean value. In other words, it points out that the single observations will be very spread out as compared to the mean itself. By observing the boxplot, it is also possible to notice a really high level of data dispersion, highlighted by the "thin" interquantile range and by the numerous outliers.
+
+## Inference
+
+In this chapter we introduce the statistical inference, so we use the information from our new sample to make statements about the characteristics of the whole population. First of all, we are going to use the criterion of Akaike information, that allows us to understand which is the best model that can be obtained from the time series we are using right now. Then, we estimate the simple regression, which is also called autoregression, the predicted values and lastly the autocorrelation of the residuals. The same will be done for the multiple regression.
+
+#### Criterion of Akaike information
+
+The results of the criterion, from which we are going to choose the regression to use, are as it follows:
+
+```{r echo=FALSE}
+AIC(arima(dp, order = c(1,0,0)),
+    arima(dp, order = c(2,0,0)),
+    arima(dp, order = c(3,0,0)),
+    arima(dp, order = c(4,0,0)),
+    arima(dp, order = c(5,0,0)),
+    arima(dp, order = c(6,0,0)),
+    arima(dp, order = c(7,0,0)))
+```
+
+As already said, we will use the simple regression and then the multiple regression, which is going to use 6 instances for it is considered the best model given its lowest result of the criterion.
+
+### Simple regression
+
+We now compute the simple regression that is going to consider as the independent variable the same value but from a period previous to the one we are looking for, therefore it does not depend on another variable.
+
+```{r}
+sempliceAR <- arima(dp, order = c(1,0,0))
+sempliceAR
+```
+
+Now we estimate the data of future values. The method we are going now to use is called Rolling Window method, that consists of a loop used to estimate a certain number of predicted *x* values, given a sub-sample of *m* width. For each sequence, *m* goes to the next period, keeping the same dimensions and computing again the value to predict. This loop is going to work for the entire operation.
+
+```{r}
+matrixRS <- matrix(0,11,1)
+for(jj in 1:11){
+  dp2 <- dp[jj:220+jj]
+  regSemp <- arima(dp2, c(1, 0, 0))
+  prevRS <- forecast(regSemp,1)
+  matrixRS[jj] <- prevRS$mean
+}
+matrixRS <- round(matrixRS, digits = 1)
+matrixRS
+```
+
+#### Autocorrelation of residuals
+
+The correlation, in this case autocorrelation, is represented graphically in order to understand the linear relationship between the residuals.
+
+```{r echo=FALSE}
+acf(sempliceAR$residuals, main = 'Autocorrelation of residuals - Simple regression')
+```
+
+#### RMSE
+
+The root mean squared error measures the prediction error that happens when we use this type of regression. The lower the value, the better.
+
+```{r}
+rmseRS <- sqrt(mean((dp[221:231]-matrixRS)^2))
+```
+
+The result is:
+
+```{r echo=FALSE}
+rmseRS
+```
+
+### Multiple regression
+
+Next we show the estimate of the multiple regression, that is:
+
+```{r}
+multipla <- arima(dp, order = c(6,0,0)) 
+multipla
+```
+
+Now we estimate the data of future values of this multiple regression:
+
+```{r}
+matrixRM <- matrix(0,11,1)
+for(jj in 1:11){
+  dp3 <- dp[jj:220+jj]
+  regMult <- arima(dp3, c(6, 0, 0))
+  prevRM <- forecast(regMult,1)
+  matrixRM[jj] <- prevRM$mean
+}
+matrixRM <- round(matrixRM, digits = 1)
+matrixRM
+```
+
+#### Autocorrelation
+
+```{r echo=FALSE}
+acf(multipla$residuals, main = 'Autocorrelation of residuals -  Multiple regression')
+```
+
+#### RMSE
+
+Its root mean squared error is:
+
+```{r echo=FALSE}
+rmseRS <- sqrt(mean((dp[221:231]-matrixRM)^2))
+rmseRS
+
+```
+
+### Residuals vs. Fitted
+
+```{r echo=FALSE, warning=FALSE}
+par(mfrow = c(1,2))
+qqnorm(residuals(sempliceAR), main = "Semplice"); qqline(residuals(sempliceAR))
+qqnorm(residuals(multipla), main = "Multipla"); qqline(residuals(multipla))
+```
+
+## Conclusion
+
+```{r echo=FALSE}
+nuovoDF <- data.frame("Simple" = matrixRS, "Multiple" = matrixRM, "Real values" = dp[221:231])
+knitr::kable(nuovoDF,caption = "Table of predicted values of each regression and the real values from June 2021 to April 2022")
+```
+
+After a careful analysis of the whole time series, which concerns the loans for habitations, it has been possible to comprehend that, from now on, young people are going to interface themselves with banks less likely to be flexible on granting loans. Anyway, this project has the goal to predict the loans' quantities and, from what we have seen from the first results, it is not always possible to have a precise estimate of the actual value, especially when the AIC and RMSE criteria are not coherent with each other.
