@@ -1,0 +1,267 @@
+---
+title: "Assignment"
+author: "Gianni Eduard Balbin Canchanya - Matricola 901609"
+date: "2023-03-21"
+output: word_document
+---
+
+# Exercise 9
+
+Consider the following data, measuring the processing times (in milliseconds) for 8 files uploaded to two different servers:
+
+- Processing time (in ms) with Server A: 176, 125, 152, 180, 159, 168, 160, 151;
+- Processing time (in ms) with Server B: 164, 121, 137, 169, 144, 145, 156, 139.
+
+## 9.0 Illustrate the data using appropriate descriptive statistics and graphical representations.
+\
+```{r}
+serverA <- c(176, 125, 152, 180, 159, 168, 160, 151)
+serverB <- c(164, 121, 137, 169, 144, 145, 156, 139)
+```
+\
+Let's see the descriptive statistics.
+\
+```{r}
+require(skimr)
+skim_without_charts(serverA)
+```
+\
+As we already know, the _serverA_ is a vector with 8 positive values. 
+The Mean of the Server A is equal to 158.88 and the Median values is 159.5, so the difference of these two values are not high.
+The range of variation is equal to 55.
+We can see that the median has not the same difference between the first quantile and third quantile, indeed in some close to the first quantile. The minimum and the maximum of the data are 125 and 180, respectively. We can also see there's a huge distance with the minimum and the first quantile, equal to 26.75.
+The standard deviation of the Server A is quite low.
+
+Let's see the boxplot of the Server A.
+\
+```{r}
+boxplot(serverA, xlab = "Server A", main = "Boxplot Server B", horizontal = TRUE, col = "azure")
+```
+\
+Our thoughts did before just watching on the descriptive analysis are confirmed by this boxplot. Another feature is that there are no outliers on this server.
+
+Now, we analyze the Server B.
+\
+```{r}
+skim_without_charts(serverB)
+```
+\
+As the Server A, the _serverB_ is a vector with 8 positive values.
+In this case, the Mean of the Server B is equal to 146.88 and the Median is 144.5, there's a little difference between them. The range of variation is equal to 48.
+Also in this case, the Median is closest to the first quantile and there's a greater difference between the minimum, equal to 121, and the first quantile compared to the maximum, equal to 169, and the third quantile.
+Again, the standard deviation of the Server B is quite low.
+
+Let's see the graphs of the Server B too.
+\
+```{r}
+boxplot(serverB, xlab = "Server B", main = "Boxplot Server A", horizontal = TRUE, col = "lightyellow")
+```
+\
+We can see again that there are no outliers.
+I replot again the boxplot of the two servers to compare them but in vertical way.
+\
+```{r}
+par(mfrow = c(1,2))
+boxplot(serverA, xlab = "Server A", col = "azure")
+boxplot(serverB, xlab = "Server B", col = "lightyellow")
+```
+\
+We notice that the interquantile range are not similar, in the server B is greater than the Server A.
+
+\newpage
+## 9.1 Consider as parameter of interest the difference between the two arithmetic means. Apply the bootstrap method using a number of bootstrap replications equal to 1000 and using the bootstrap function to obtain the standard error for this difference. Comment on the result.
+
+\
+```{r}
+require(bootstrap)
+set.seed(123)
+bootA <- bootstrap(serverA, nboot = 1000, mean)
+bootB <- bootstrap(serverB, nboot = 1000, mean)
+differenceMean <- bootA$thetastar - bootB$thetastar
+sd(differenceMean)
+```
+\
+Considering the difference between the two arithmetic means, We obtain a value of 7.81 as standard deviance. There's still a great spread of the data.
+
+\newpage
+## 9.2 Draw the bootstrap distribution comment on the distribution.
+\
+```{r}
+hist(differenceMean, breaks = 50, freq = FALSE, main = "Bootstrap distribution with 1000 samples", xlab = "Difference Mean", col = "yellow", ylab = "Density")
+abline(v = mean(differenceMean), col = "red")
+```
+\
+We can see that the bootstrap distribution seems like a normal distribution with mean reported by the red line.
+
+\newpage
+## 9.3 Calculate the confidence interval at a confidence level of 95% with the percentile method. Comment on the length of the interval and on the plausible values for the parameter
+\
+```{r}
+qMean <- quantile(differenceMean, c(0.025, 0.975))
+qMean
+```
+\
+The confidence interval for the difference calculated at confidence level of 0.95 is [-4.13, 27]. So, this is the expected range for the difference between the arithmetic means. It can variate between -4.13 up to 27.
+
+\newpage
+## 9.4 Apply the bootstrap method as in point 7.1, considering instead as estimator of interest the difference between the two medians. Depict the bootstrap distribution and comment on the shape.
+\
+```{r}
+set.seed(123)
+strapA <- bootstrap(serverA, nboot = 1000, median)
+strapB <- bootstrap(serverB, nboot = 1000, median)
+diffMedian <- strapA$thetastar - strapB$thetastar
+hist(diffMedian, breaks = 50, freq = FALSE, main = "Bootstrap distribution with 1000 samples", xlab = "Difference Median", col = "orange", ylab = "Density")
+abline(v = median(differenceMean), col = "blue")
+```
+\
+It's definitely different from the first bootstrap distribution, because of the tails that are longer than the first one.
+
+\newpage
+## 9.5 Consider the estimator at the previous point (difference between the medians) and provide a confidence interval at a confidence level of 90%. Comment on the result.
+\
+```{r}
+qMedian <- quantile(diffMedian, c(0.05, 0.95))
+qMedian
+```
+\
+In this case, we have a confidence interval equals to [-4, 27] of our difference between medians, wider than the other confidence interval.
+
+\newpage
+## 9.6 Depict the histogram of the bootstrap distribution adding the bars referred to upper and lower bounds of the confidence interval, add also the legend.
+```{r}
+hist(differenceMean, breaks = 50, freq = FALSE, main = "Bootstrap distribution with 1000 samples", 
+     xlab = "Difference Mean", col = "yellow", ylab = "Density")
+abline(v = c(mean(differenceMean), qMean[1], qMean[2]), col = c("red","green","green"))
+legend("topleft", 
+       c("Mean", "conf. int1", "conf. int2"),
+       col = c("red", "green", "green"), 
+       lty = c(1,1,1),
+       cex = 0.7)
+```
+\
+```{r}
+hist(diffMedian, breaks = 50, freq = FALSE, main = "Bootstrap distribution with 1000 samples",
+     xlab = "Difference Median", col = "orange", ylab = "Density")
+abline(v = c(median(differenceMean),qMedian[1], qMedian[2]), col = c("blue","purple","purple"))
+legend("topleft", 
+       c("Median", "conf. int1", "conf. int2"),
+       col = c("blue", "purple", "purple"), 
+       lty = c(1,1,1),
+       cex = 0.7)
+```
+\
+
+\newpage
+# Exercise 12
+
+The data in the file _bank.Rdata_ are related to starting salaries of all skills, entry level, clerical workers between 1965 and 1975 (see Ramsey, F., & Schafer, D. (2012). The statistical sleuth: a course in methods of data analysis. Cengage Learning).
+
+We dispose of the following variables:
+
+- _bsal_ beginning salary (annual salary at time of hire)
+- _sal77_ annual salary in 1977
+- _senior_ months since hired
+- _age_ in months
+- _educ_ years of education
+- _exper_ months of prior work experience
+
+## 12.0 Explain if the data are collected with a randomized experiment or under an observation study. Define the sample size, and identify the response variable and the covariates. Show also the last six rows of the data and comment on these values.
+\
+```{r}
+load("bank.Rdata")
+str(bank)
+```
+\
+The data are collected under an observation study. As we already know, the bank has 6 variables with 93 observations for each variable.
+For this case, we choose _bsal_ variable as the response variable.
+\
+```{r}
+cov(bank)
+```
+\
+We see that the values on the diagonal are the variances and for the _educ_ variable it has a low variability compared to the others 5 variables which are quite high. If we look to the first column because the _bsal_ variable is the object of interest, each covariance is positive, not in the case of the _senior_ variable.
+\
+```{r}
+tail(bank)
+```
+\
+
+\newpage
+## 12.1 Describe the observations reporting and commenting on the descriptive statistics for each variable.
+\
+```{r}
+require(skimr)
+skim_without_charts(bank)
+```
+\
+For all the variables we have 0 missing values.
+The Mean and the Median have similar values for all the variables, but not in the case of _exper_ variable that has a difference of 30.
+We can notice that the salary at time of hire ( _bsal_ variable) has a range of variation smaller than the salary of the workers in 1977. The range of variation of _sal77_ is the double of the range of variation of _bsal_.
+The standard deviations of the both variable are low if we calculate the Coefficient of variation, both less than 20\%, as well for the _senior_ and the _educ_ variables. As far as for the _age_ and the _exper_ variables, they have a Coefficient of variation equals to 30\% and 90\% respectively.
+The distance between the median and the maximum for the _bsal_ variable is greater than the distance between the median and the minimum, as well as for the _sal77_ variable. And the distance of the median from the first and the distance from the third quantile are almost the same for the both variables, as well as for the _age_ variable.
+The _senior_ variable shows us that the minimum is 65, so little more of 5 years of being hired, and the maximum is 98, equals to 8 years more or less. We have a difference of 3 years in this case. The median is more close to the third quantile.
+The _age_ variable has as minimum a value of 280 (23 years old as worker) and a maximum equals to 774 (65 years old as worker), a difference of 42 years old.
+The _educ_ variable has a difference of 8 years about the education of the worker. We also notice that the first quantile and the median are the same. This means that all data in between too must have the same value.
+At last, the _exper_ variable tells us that a worker can be hire even if he doesn't have any experience before. In this case, we have the median more close to the first quantile instead of the third quantile. 
+
+\newpage
+## 12.2 How would you expect age, experience and education to be related to starting salaries? Generate appropriate explanatory plots. Are the associations as you expected? What implication this results may have for modelling?
+I expect that they are not negatively correlated to the salaries. Let's confirm this by the corrplot() function.
+\
+```{r}
+require(corrplot)
+corrplot(cor(bank))
+```
+\
+As expected, _age_, _educ_ and _exper_ variables are positively correlated to the _bsal_, for the _age_ and _exper_ the correlation is low and for the _educ_ the correlation is at least 0.4. We can see that more years of education implies a higher salary. For the others two variables, it's the same thing, just a little bit lesser.
+
+\newpage
+## 12.3 Do you think it would be important to control for the number of years with the bank? Why?
+The number of years with bank should be important because it means that you as worker have doing experience in the bank. This implies that you have the right to see your salary grow.
+
+\newpage
+## 12.4 Are the covariates very associated? Plot and comment the corrplots for raw and partial correlations. What implications does a high correlation for modelling?
+\
+```{r}
+corrplot(cor(bank), method = 'color', addCoef.col = "grey40")
+```
+\
+We start about describing the correlation plot. We've just described the first row before about _age_, _educ_ and _exper_ variables, for _sal77_ and _senior_ we can see a correlation equals to 0.42 and -0.29, respectively.
+If we look to the second row, we can see that we have 2 negative correlations, with _age_ and _exper_ variables, equals to -0.55 and -0.37. We still have two variables with a correlation at least 0.4. The correlation between _sal77_ and _senior_ are positively correlated but not quite high, only 0.13.
+The third row shows us a lower correlation for each variable with _senior_ variable as a object of interest, both positively and negatively.
+About the fourth row, the correlation between _age_ and _exper_ variables are very very high, 0.8. As regards with _sal77_ variable, the correlation is negative, -0.55. In the matter of the others variables, they still have a lower correlation, both positively and negatively.
+Again, in the fifth row, we have for _senior_, _age_ and _exper_ variables a low correlation with _educ_ variable. About _bsla_ and _sal77_ variables, they have a positive moderate correlation equals at least 0.4.
+In the end, we have _exper_ as object of interest and with _age_ variable, they have a high correlation (0.8), instead with _sal77_ variable they have a negative correlation almost equals to -0.4. The others show us a low correlation.
+
+Now we analyze the partial correlation.
+\
+```{r}
+require(ggm)
+corrplot(parcor(cov(bank)), method = 'color', addCoef.col = "grey40")
+```
+\
+Instantly, we can say that the colors of the correlation plot become clearer compared to the previous correlation plot.
+The first row doesn't change a lot, the _senior_ variable has a negative partial correlation.
+The second row shows that the partial correlation between _sal77_ and _exper_ variables are still negative but near to 0. About _educ_ variable decrease a bit, meanwhile the _age_ variable is equal to -0.36.
+In the third row, the partial correlation between _exper_ and _senior_ variables is positive but not with a high value.
+For the fourth row, _age_ and _sal77_ variables has a negative partial correlation equals to -0.36.
+The fifth row has a moderate partial correlation of the _educ_ variable only with _bsal_ variable.
+Last row shows us that almost each variable with _exper_ variable has a positive correlation, not in the case of the _sal77_ variable even if it's close to zero.
+
+
+\newpage
+## 12.5 Fit a multiple linear regression model with starting salary as response variable and experience and education as covariates. Report the results using the summary function and comment on the estimated parameters. Is there a difference of the covariates on the salary and how is it?
+\
+```{r}
+summary(lm(bsal ~ exper + educ, bank))
+```
+\
+In this case, we have a multiple linear regression as:\
+bsal = 3459.9077 + 1.6430\*exper + 134.7096\*educ\
+If we remember that the minimum of experience and education of the worker can be 0 and 8 respectively, the beginning salary for this type of worker is equal to 4.537,5845\$.\
+The maximum salary with the maximum value of experience and education of this analysis is 6.351,2443\$.\
+Considering that this beginning salary is annual at the time of hire, for the both cases is very low.\
+Anyway, we can say that for every unit of experience and education, the beginning salary will increase by 1.6430\$ for experience and by 134.7096\$ for education. We can say that the beginnig salary starts at 35696.9077\$ if we don't look at the experience and the education.
+In the p-value column, we see that only _educ_ variable is statistical significative at confidence level of 0.1%. About the _exper_ variable, it doesn't significative at confidence level of 10% neither.
+On the section of _Multiple R-squared_, we can see that this regression model doesn't fitting well this data, because its result is equal to 0.2136. More the value is near to 1 more the model is well to the data. Even the _Adjusted R-squared_ confirm this idea that it doesn't fitting well, we have a result of 0.1961. We remember that if we have to look if the model is fitting well the data, we have to look at the _Adjusted R-squared_ section, because the value of _Multiple R-squared_ will always increase as more variables are included in the model.
