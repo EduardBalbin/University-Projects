@@ -1,0 +1,272 @@
+---
+title: "Assignment 2"
+author: "Gianni Eduard Balbin Canchanya - Matricola 901609"
+date: "2023-04-09"
+output: word_document
+---
+
+# Exercise 17
+
+Consider the data in the library *faraway* named savings referred to 50 different countries. These data are averages from 1960 to 1970 (to remove business cycles or other short-term fluctuations).
+
+Consider only the following variables:
+
+-   *dpi*: per capita disposable income in U.S. dollars;
+-   *sr*: aggregate personal saving divided by disposable income;
+-   *pop15*: is the percentage of population under 15 (pop15).
+
+( *Note that you need to create a dataframe from the original one by selecting the above variables.* )
+
+## 17.1 Explore the data using descriptive statistics. Comment on the results.
+\
+```{r}
+library(faraway)
+df <- savings[,c(4,1,2)]
+skimr::skim_without_charts(df)
+```
+\
+For these 3 variables, we don't have any missing values.
+First, _dpi_ variable has mean equals to 1106 and median equals to 695, with huge difference equals to 411. It means we are in presence of a positive skewness. The minimum is 88 and the maximum is 4001. The interquantile range is equal to 1507. The median is near to the first quantile. And there's a huge difference between the maximum and the third quantile. The standard deviation is very high.
+Then, _sr_ variable has mean equals to 9 and median equals to 10, they are quite close. The maximum is equal to 21 and the minimum is equal to 0.60. The median is near to the third quantile. The difference between the first quantile and the minimum is lower than the difference between the maximum and the third quantile. The standard deviation is a little bit higher.
+At last,  _pop15_ variable has mean equals to 35 and median equals to 32,, even in this case they are quite close. The maximum is equal to 47 and the minimum is equal to 21. The difference between the maximum and the third quantile are similar than the difference between the minimum and the first quantile. The median, in this case, is near to the first quantile. And the standard deviation is quite low.
+
+\newpage
+## 17.2 Show the scatter plot matrix with the panel smooth line and comment on each plot.
+\
+```{r}
+pairs(df, panel = panel.smooth)
+```
+\
+In the first row, the second column of the matrix, we can see that the trend line is linearly increasing to the point 11 and then decrease slowly. The others plot show a negative trend line.
+in the first row, the third column shows that some points are plotted at the end of the line, but in the second row, at the first column, as well as at the third row, some points are plotted at the start of the line.
+
+\newpage
+## 17.3 Report and comment on sample correlations and partial correlations.
+\
+```{r}
+corrplot::corrplot(cor(df), addCoef.col = 'grey60')
+```
+\
+The correlation between _dpi_ and _sr_ is positive but not high. Instead, the correlation about _dpi_ and _pop15_ are definitely high and negative.
+\
+```{r}
+require(ggm)
+corrplot::corrplot(parcor(cov(df)), addCoef.col = 'grey60')
+```
+\
+The partial correlation shows us that the correlation between _dpi_ and _sr_ is no more a positive correlation but negative, equals to -0.21.
+
+\newpage
+## 17.4 Compare the observed values for Italy, Ireland, Japan and Switzerland. Comment. Which is the country showing the highest value of the population under 15 years? An the minimum?
+\
+```{r}
+df[c('Italy','Ireland','Japan','Switzerland'),]
+```
+\
+Switzerland has the higher salary compared to the others, Ireland has the minimum salary.
+Japan is the country where the value of the aggregate personal saving divided by disposable income is high. Irish people spends more in proportion to their salary.
+About the percentage of population under 15, the country with the highest value is Ireland and the lowest is Switzerland.
+
+\newpage
+## 17.5 Consider the multiple regression model of savings as a function of other two covariates. Fit the model and calculate the variance inflation factor for each covariate.
+\
+```{r}
+mrm <- lm(sr~dpi+pop15, df)
+vif(mrm)
+```
+\
+According to these values of the variance inflation, the estimated standard error for the coefficient related to _dpi_ variable is 2.34 times larger than it would have been without collinearity, the same for _pop15_ variable. Remember, when the variance inflation is greater than 10, it indicates excessive collinearity. not in this case.
+
+\newpage
+## 17.6 Use the Akaike information Criterion to perform model selection and comment on the results at each step of the procedure.
+\
+```{r}
+step(mrm)
+```
+\
+The model that includes both variables as covariates has the lowest AIC.
+
+\newpage
+## 17.7 Comment on the residual standard error and on the R\^2 and the adjusted R\^2.
+\
+```{r}
+summary(mrm)
+```
+\
+The residual standard error is equal to 3.979. It means that this multiple regression model predicts the _sr_ variable with an average error of about 3.979.
+The R\^2 is equal to 0.24, so this model doesn't fitting well this data. The adjusted R\^2 is even smaller than the R\^2, equal to 0.21.
+
+\newpage
+## 17.8 Write the equation of the estimated model
+$sr = 22.71 - 0.001 \cdot dpi -0.33 \cdot pop15$
+
+\newpage
+## 17.9 Compute the fitted value for Italy and calculate its residual value.
+\
+```{r}
+mrm$fitted.values['Italy']
+df['Italy',2]-mrm$fitted.values['Italy']
+```
+\
+
+\newpage
+## 17.10 Report and comment on the estimated of σ\^2.
+\
+```{r}
+summary(mrm)$sigma^2
+```
+\
+The estimated of σ\^2 is equal to 15.83, quite high.
+
+\newpage
+## 17.11 Perform graphical inspection of the residuals and comment on each plot. Are there some violations of the assumptions made by the classical multiple linear regression model?
+\
+```{r}
+plot(mrm$residuals,
+     xlab = 'Observation number',
+     ylab = 'Residuals')
+abline(h = 0,col='red')
+```
+\
+The range of variation of the residuals seems like equal to 18.
+The dispersion of the residuals in the graph doesn't show any particular pattern.
+Deviation from the mean values are balanced.
+There are no particularly distant points from the mean value.
+
+\
+```{r}
+plot(mrm$fitted,
+     mrm$residuals,
+     xlab = 'Fitted values',
+     ylab = 'Residuals')
+```
+\
+The plot doesn't show a trend. It seems like there are two separate group. Now we plot the smoothscatter of this relationship.
+\
+```{r}
+smoothScatter(mrm$fitted,
+              mrm$residuals,
+              xlab = 'Fitted values',
+              ylab = 'Residuals')
+abline(h = 0, col = 'red')
+```
+\
+
+\
+```{r}
+par(mfrow = c(1,2))
+plot(df$dpi,
+     mrm$residuals,
+     xlab = 'dpi',
+     ylab = 'Residuals',
+     col = 'blue')
+plot(df$pop15,
+     mrm$residuals,
+     xlab = 'pop15',
+     ylab = 'Residuals',
+     col = 'red')
+```
+\
+For the _dpi_, higher is the value, closer is the residual to zero.
+For the _po15_, it seems like there are two serapate group, as in the case before.
+
+\newpage
+## 17.12 Interpret each estimated regression coefficients and also describe the results to verify the null hypothesis that the coefficient is equal to zero.
+\
+```{r}
+summary(mrm)
+```
+\
+In the "coefficients" section, we can see the estimated values.
+The intercept is equal to 22.71.
+The _dpi_ value is equal to -0.001, for this reason the p-value equals to 0.14 tells us that we cannot confirm the alternative hypothesis that the estimated value of _dpi_ is not equal to zero, at confidence level equals to 0.10. We can say that for every unit of _dpi_, the _sr_ value will decrease by 0.001.
+The _pop15_ value is equal to -0.33. Differently from the _dpi_ value, the _pop15_ value under the null hypothesis has a p-value equals to 0.001, so we can refuse this hypothesis at confidence level equals to 0.01 too. We can say that for every unit of _pop15_, the _sr_ value will decrease by 0.33.
+
+\newpage
+# Exercise 19
+
+Data in the file *diamonds.RData* (a subsample of the *diamonds* dataset in the *ggplot2* package) are related to the following measurements:
+
+-   *carat*: purity of the diamond (in carats);
+-   *cut*: quality of the diamond's cut, measured trought a categorical variable with categories ranging from 1 (lowest quality) to 5 (highest quality);
+-   *price*: price of the diamond, measured in 1000\$;
+-   *length*: length of the diamond (in millimeters);
+-   *width*: width of the diamond (in millimeters);
+-   *depth*: The depth of the diamond (in millimeters).
+
+Considering as response variable *carat* develop the same points of Exercise 18 also reporting an additional point 19.6 about the confidence intervals for the estimated regression parameters at confidence level of 90%. Comment on the estimated intervals of price and depth.
+
+## .0 Specify the research questions which can be formulated considering the available data.
+\
+```{r}
+load("diamonds.Rdata")
+str(diamonds)
+```
+\
+The research questions is: "for each level of quality of the diamond's cut, which is the value of purity of the diamond?"
+
+\newpage
+## .1 Print levels and labels of the categorical covariate.
+\
+```{r}
+levels(diamonds$cut)
+print("lowest quality, below average quality, average quality, above average quality, highest quality")
+```
+\
+
+\newpage
+## .2 Provide statistics and figures to describe the sample data. Are they from an observational or a randomized experiment? Comment on each output.
+\
+```{r}
+skimr::skim_without_charts(diamonds)
+```
+\
+\
+```{r}
+par(mfrow = c(1,5))
+boxplot(diamonds$carat, main = "carat")
+boxplot(diamonds$price, main = "price")
+boxplot(diamonds$length, main = "length")
+boxplot(diamonds$width, main = "width")
+boxplot(diamonds$depth, main = "depth")
+```
+
+\
+We can see that in the carat and in the price variable there are some outliers, probably caused by levels of the cut variable.
+The sample data are from an observational experiment.
+
+\newpage
+## .3 Estimate a multiple linear regression model to explain the carat as a function of the other covariates. First perform model selection using the Akaike information criterion. Comment on the results provided by the step function.
+\
+```{r}
+mrm1 <- lm(carat ~ .*cut, diamonds)
+step(mrm1)
+```
+\
+The step() function prints 4 models with all negative Akaike information values. In this case, we choose the last one that has a value equals to -4123.25. So, we will have a model with 17 coefficients which one is the intercept.
+
+
+\newpage
+## .4 Report and comments on all the results provided by the summary function on the model selected at the previous step.
+\
+```{r}
+mrm2 <- lm(carat ~ cut + price + length + width + depth + cut:price + cut:width, data = diamonds)
+summary(mrm2)
+```
+\
+Most of the values of this multiple regression model can refuse the null hypothesis at confidence level 0.01, not in the case of the price variable which has a p-value close to 1.
+The intercept has a negative value equal to -2.45, as well as the price variable with value equals to -0.0006 and all cut:width with value less than -0.2.
+The residual standard error is equal to 0.0752 which is definitely low, which is very good.
+In fact, the multiple r-square, as well as the adjust r-squared, has a value very close to one. This means that this model fitting almost perfectly the data.
+
+\newpage
+## .5 Add to the scatterplot of the data the estimated parallel lines and comment on the figure. Write the equations of the model.
+\
+This point is not applicable.
+\
+
+\newpage
+## .6 about the confidence intervals for the estimated regression parameters at confidence level of 90%. Comment on the estimated intervals of price and depth.
+\
+As we said before on the point 4, we have to confirm the null hypothesis that the price value is equal to zero at confidence level 90%, because it has a p-value equal to 0.92.
+About the depth value, at confidence level 90%, we can refuse this hypothesis because the p-value is even less than 0.001, i.e. confidence level 99%.
