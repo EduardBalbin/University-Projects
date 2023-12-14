@@ -1,0 +1,698 @@
+-- query 1
+/*
+DELETE FROM appelli
+      WHERE cdscod IS NULL;
+UPDATE appelli
+   SET dtappello = CASE WHEN LENGTH(dtappello) = 8 THEN '0' || dtappello WHEN LENGTH(dtappello) = 9 THEN CASE WHEN SUBSTR(dtappello, 2, 1) = '/' THEN '0' || dtappello ELSE SUBSTR(dtappello, 1, 3) || '0' || SUBSTR(dtappello, 4) END ELSE dtappello END
+ WHERE LENGTH(dtappello) >= 8;
+ UPDATE appelli
+   SET dtappello = DATE(SUBSTR(dtappello, 7) || '-' || SUBSTR(dtappello, 4, 2) || '-' || SUBSTR(dtappello, 1, 2) );
+SELECT min(dtappello),
+       max(dtappello) 
+  FROM appelli;
+ALTER TABLE appelli ADD annoAcc VARCHAR (255);
+UPDATE appelli
+   SET annoAcc = CASE WHEN (dtappello BETWEEN '2014-09-25' AND [2015-09-24]) THEN '2014/2015' WHEN (dtappello BETWEEN '2015-09-25' AND [2016-09-24]) THEN '2015/2016' WHEN (dtappello BETWEEN '2016-09-25' AND [2017-09-24]) THEN '2016/2017' WHEN (dtappello BETWEEN '2017-09-25' AND [2018-09-24]) THEN '2017/2018' WHEN (dtappello IS NULL) THEN NULL ELSE '2018/2019' END;
+*/
+SELECT appelli.dtappello,
+       appelli.adcod,
+       ad.ad,
+       appelli.annoAcc,
+       count(studente) AS totstudenti,
+       appelli.appcod
+  FROM appelli
+       JOIN
+       iscrizioni ON appelli.appcod = iscrizioni.appcod
+       JOIN
+       ad ON appelli.adcod = ad.adcod
+ WHERE dtappello IS NOT NULL
+ GROUP BY appelli.appcod
+ ORDER BY appelli.dtappello;
+
+
+-- query 1 denormalizzato
+/*
+UPDATE bos_denormalizzato
+   SET DtAppello = strftime('%d/%m/%Y', '20' || substr(DtAppello, 7, 2) || '-' || substr(DtAppello, 4, 2) || '-' || substr(DtAppello, 1, 2) );
+UPDATE bos_denormalizzato
+   SET DtAppello = DATE(SUBSTR(DtAppello, 7) || '-' || SUBSTR(DtAppello, 4, 2) || '-' || SUBSTR(DtAppello, 1, 2) );
+SELECT min(DtAppello),
+       max(DtAppello) 
+  FROM bos_denormalizzato;
+ALTER TABLE bos_denormalizzato ADD annoAcc VARCHAR (255);
+UPDATE bos_denormalizzato
+   SET annoAcc = CASE WHEN (DtAppello BETWEEN '2014-09-25' AND [2015-09-24]) THEN '2014/2015' WHEN (DtAppello BETWEEN '2015-09-25' AND [2016-09-24]) THEN '2015/2016' WHEN (DtAppello BETWEEN '2016-09-25' AND [2017-09-24]) THEN '2016/2017' WHEN (DtAppello BETWEEN '2017-09-25' AND [2018-09-24]) THEN '2017/2018' ELSE '2018/2019' END;
+*/
+SELECT DtAppello,
+       AdCod,
+       AD,
+       annoAcc,
+       count(studente) AS totstudenti
+  FROM bos_denormalizzato
+ GROUP BY DtAppello,
+          AdCod
+ ORDER BY annoAcc ASC;
+ 
+
+-- query 2
+/*
+-- tot esami superati per appello
+SELECT appelli.appcod,
+       ad.ad,
+       count(appelli.appcod) AS totSup
+  FROM iscrizioni
+       JOIN
+       appelli ON iscrizioni.appcod = appelli.appcod
+       JOIN
+       ad ON appelli.adcod = ad.adcod
+ WHERE assenza = 0 AND 
+       Superamento = 1
+ GROUP BY appelli.appcod;
+-- tot esami non superati per appello
+SELECT appelli.appcod,
+       ad.ad,
+       count(appelli.appcod) AS totNoSup
+  FROM iscrizioni
+       JOIN
+       appelli ON iscrizioni.appcod = appelli.appcod
+       JOIN
+       ad ON appelli.adcod = ad.adcod
+ WHERE assenza = 0 AND 
+       Superamento = 0
+ GROUP BY appelli.appcod;
+*/
+SELECT t1.appcod,
+       t1.ad,
+       t1.totSup,
+       t2.totNoSup,
+       (t1.totSup * 1.0 / (t1.totSup + t2.totNoSup) ) AS ratio
+  FROM (
+           SELECT appelli.appcod,
+                  ad.ad,
+                  count(appelli.appcod) AS totSup
+             FROM iscrizioni
+                  JOIN
+                  appelli ON iscrizioni.appcod = appelli.appcod
+                  JOIN
+                  ad ON appelli.adcod = ad.adcod
+            WHERE assenza = 0 AND 
+                  Superamento = 1
+            GROUP BY appelli.appcod
+       )
+       AS t1
+       JOIN
+       (
+           SELECT appelli.appcod,
+                  ad.ad,
+                  count(appelli.appcod) AS totNoSup
+             FROM iscrizioni
+                  JOIN
+                  appelli ON iscrizioni.appcod = appelli.appcod
+                  JOIN
+                  ad ON appelli.adcod = ad.adcod
+            WHERE assenza = 0 AND 
+                  Superamento = 0
+            GROUP BY appelli.appcod
+       )
+       AS t2 ON t1.appcod = t2.appcod
+ ORDER BY ratio ASC
+ LIMIT 10;
+ 
+
+-- query 2 denormalizzato
+/*SELECT t1.appcod, t1.ad, t1.totSup, t2.totNoSup,
+       (t1.totSup * 1.0 / (t1.totSup + t2.totNoSup) ) AS ratio
+  FROM (SELECT appelli.appcod, ad.ad,appelli.dtappello, count(appelli.appcod) AS totSup
+          FROM iscrizioni JOIN appelli
+          ON iscrizioni.appcod = appelli.appcod
+          JOIN ad ON appelli.adcod = ad.adcod
+          WHERE assenza = 0 AND Superamento = 1
+          GROUP BY appelli.appcod
+          order by ad.ad asc) AS t1
+       JOIN
+       (SELECT appelli.appcod, ad.ad, count(appelli.appcod) AS totNoSup
+          FROM iscrizioni JOIN appelli
+          ON iscrizioni.appcod = appelli.appcod
+          JOIN ad ON appelli.adcod = ad.adcod
+          WHERE assenza = 0 AND Superamento = 0
+          GROUP BY appelli.appcod) AS t2
+       ON t1.appcod = t2.appcod
+       ORDER BY ratio ASC
+       LIMIT 10;*/
+SELECT t1.DtAppello,
+       t1.AD,
+       t1.totSup,
+       t2.totNoSup,
+       (t1.totSup * 1.0 / (t1.totSup + t2.totNoSup) ) AS ratio
+  FROM (
+           SELECT AD,
+                  DtAppello,
+                  Count(DtAppello) AS totSup
+             FROM bos_denormalizzato
+            WHERE Assenza = 0 AND 
+                  Superamento = 1
+            GROUP BY DtAppello,
+                     AD
+            ORDER BY AD ASC
+       )
+       AS t1
+       JOIN
+       (
+           SELECT AD,
+                  DtAppello,
+                  Count(DtAppello) AS totNoSup
+             FROM bos_denormalizzato
+            WHERE Assenza = 0 AND 
+                  Superamento = 0
+            GROUP BY DtAppello,
+                     AD
+            ORDER BY AD ASC
+       )
+       AS t2 ON t1.DtAppello = t2.DtAppello
+           AND  t1.AD = t2.AD
+ ORDER BY ratio ASC
+ LIMIT 10;
+ 
+
+-- query 3
+SELECT cds.cdscod,
+       cds.cds,
+       appelli.dtappello,
+       count(cds.cds) AS esamiSvolti
+  FROM appelli
+       JOIN
+       cds ON appelli.cdscod = cds.cdscod
+ WHERE appelli.dtappello IS NOT NULL
+ GROUP BY appelli.dtappello,
+          appelli.cdscod
+ ORDER BY esamiSvolti DESC;
+
+
+-- query 3 denormalizzato
+SELECT CdSCod,
+       Cds,
+       DtAppello,
+       count(DISTINCT AD) AS EsamiSvolti
+  FROM bos_denormalizzato
+ GROUP BY DtAppello,
+          Cds
+ ORDER BY EsamiSvolti DESC;
+
+
+-- query 4
+SELECT DISTINCT t4.ad,
+                t4.cds,
+                t4.media
+  FROM (
+           SELECT t3.ad,
+                  t3.cds,
+                  t3.media
+             FROM (
+                      SELECT *,
+                             row_number() OVER (PARTITION BY t2.cds ORDER BY t2.cds) AS row_num
+                        FROM (
+                                 SELECT *
+                                   FROM (
+                                            SELECT ad.ad,
+                                                   cds.cds,
+                                                   avg(iscrizioni.Voto) AS media
+                                              FROM iscrizioni
+                                                   JOIN
+                                                   appelli ON iscrizioni.appcod = appelli.appcod
+                                                   JOIN
+                                                   ad ON appelli.adcod = ad.adcod
+                                                   JOIN
+                                                   cds ON appelli.cdscod = cds.cdscod
+                                             WHERE iscrizioni.Voto IS NOT NULL
+                                             GROUP BY ad.ad, cds.cds
+                                             ORDER BY media ASC
+                                        )
+                                        AS t1
+                                  ORDER BY t1.cds
+                             )
+                             AS t2
+                  )
+                  AS t3
+            WHERE t3.row_num <= 3
+           UNION ALL
+           SELECT t3.ad,
+                  t3.cds,
+                  t3.media
+             FROM (
+                      SELECT *,
+                             row_number() OVER (PARTITION BY t2.cds ORDER BY t2.cds DESC) AS row_num
+                        FROM (
+                                 SELECT *
+                                   FROM (
+                                            SELECT ad.ad,
+                                                   cds.cds,
+                                                   avg(iscrizioni.Voto) AS media
+                                              FROM iscrizioni
+                                                   JOIN
+                                                   appelli ON iscrizioni.appcod = appelli.appcod
+                                                   JOIN
+                                                   ad ON appelli.adcod = ad.adcod
+                                                   JOIN
+                                                   cds ON appelli.cdscod = cds.cdscod
+                                             WHERE iscrizioni.Voto IS NOT NULL
+                                             GROUP BY ad.ad, cds.cds
+                                             ORDER BY media DESC
+                                        )
+                                        AS t1
+                                  ORDER BY t1.cds
+                             )
+                             AS t2
+                  )
+                  AS t3
+            WHERE t3.row_num <= 3
+            ORDER BY t3.cds
+       )
+       AS t4
+ ORDER BY t4.cds,
+          t4.media;
+          
+
+-- query 4 denormalizzato
+SELECT DISTINCT t4.AD,
+                t4.CdS,
+                t4.media
+  FROM (
+           SELECT t3.AD,
+                  t3.CdS,
+                  t3.media
+             FROM (
+                      SELECT *,
+                             row_number() OVER (PARTITION BY t2.CdS ORDER BY t2.CdS) AS row_num
+                        FROM (
+                                 SELECT *
+                                   FROM (
+                                            SELECT AD,
+                                                   CdS,
+                                                   avg(Voto) AS media
+                                              FROM bos_denormalizzato
+                                             WHERE Voto IS NOT NULL
+                                             GROUP BY AD, Cds
+                                             ORDER BY media ASC
+                                        )
+                                        AS t1
+                                  ORDER BY t1.CdS
+                             )
+                             AS t2
+                  )
+                  AS t3
+            WHERE t3.row_num <= 3
+           UNION ALL
+           SELECT t3.AD,
+                  t3.CdS,
+                  t3.media
+             FROM (
+                      SELECT *,
+                             row_number() OVER (PARTITION BY t2.CdS ORDER BY t2.CdS DESC) AS row_num
+                        FROM (
+                                 SELECT *
+                                   FROM (
+                                            SELECT AD,
+                                                   CdS,
+                                                   avg(Voto) AS media
+                                              FROM bos_denormalizzato
+                                             WHERE Voto IS NOT NULL
+                                             GROUP BY AD, Cds
+                                             ORDER BY media DESC
+                                        )
+                                        AS t1
+                                  ORDER BY t1.CdS
+                             )
+                             AS t2
+                  )
+                  AS t3
+            WHERE t3.row_num <= 3
+            ORDER BY t3.CdS
+       )
+       AS t4
+ ORDER BY t4.CdS,
+          t4.media;
+
+
+-- query 5
+/* 
+-- media ratio
+SELECT avg(ratio) AS avg
+  FROM (
+           SELECT t1.*,
+                  t2.media,
+                  (t2.media / CASE WHEN t1.diffGiorni = 0 THEN 1 ELSE t1.diffGiorni END) AS ratio
+             FROM (
+                      SELECT iscrizioni.studente,
+                             cds.cds,
+                             julianday(max(dtappello) ) - julianday(min(dtappello) ) AS diffGiorni
+                        FROM iscrizioni
+                             JOIN
+                             appelli ON iscrizioni.appcod = appelli.appcod
+                             JOIN
+                             cds ON appelli.cdscod = cds.cdscod
+                       WHERE appelli.dtappello IS NOT NULL
+                       GROUP BY iscrizioni.studente
+                       ORDER BY cds.cdscod,
+                                iscrizioni.studente,
+                                appelli.dtappello
+                  )
+                  AS t1
+                  JOIN
+                  (
+                      SELECT iscrizioni.studente,
+                             cds.cds,
+                             avg(iscrizioni.Voto) AS media
+                        FROM iscrizioni
+                             JOIN
+                             appelli ON iscrizioni.appcod = appelli.appcod
+                             JOIN
+                             cds ON appelli.cdscod = cds.cdscod
+                       WHERE appelli.dtappello IS NOT NULL AND 
+                             iscrizioni.Voto IS NOT NULL
+                       GROUP BY iscrizioni.studente
+                       ORDER BY cds.cdscod,
+                                iscrizioni.studente,
+                                appelli.dtappello
+                  )
+                  AS t2 ON t1.studente = t2.studente
+            ORDER BY ratio DESC
+       );-- 0.94350159714953
+-- studenti superiori alla media
+SELECT t1.*,
+       t2.media,
+       (t2.media / CASE WHEN t1.diffGiorni = 0 THEN 1 ELSE t1.diffGiorni END) AS ratio
+  FROM (
+           SELECT iscrizioni.studente,
+                  cds.cds,
+                  julianday(max(dtappello) ) - julianday(min(dtappello) ) AS diffGiorni
+             FROM iscrizioni
+                  JOIN
+                  appelli ON iscrizioni.appcod = appelli.appcod
+                  JOIN
+                  cds ON appelli.cdscod = cds.cdscod
+            WHERE appelli.dtappello IS NOT NULL
+            GROUP BY iscrizioni.studente
+            ORDER BY cds.cdscod,
+                     iscrizioni.studente,
+                     appelli.dtappello
+       )
+       AS t1
+       JOIN
+       (
+           SELECT iscrizioni.studente,
+                  cds.cds,
+                  avg(iscrizioni.Voto) AS media
+             FROM iscrizioni
+                  JOIN
+                  appelli ON iscrizioni.appcod = appelli.appcod
+                  JOIN
+                  cds ON appelli.cdscod = cds.cdscod
+            WHERE appelli.dtappello IS NOT NULL AND 
+                  iscrizioni.Voto IS NOT NULL
+            GROUP BY iscrizioni.studente
+            ORDER BY cds.cdscod,
+                     iscrizioni.studente,
+                     appelli.dtappello
+       )
+       AS t2 ON t1.studente = t2.studente
+ WHERE ratio >= 0.94350159714953
+ ORDER BY ratio DESC;
+*/
+SELECT t3.cds,
+       count(t3.cds) AS numStud
+  FROM (
+           SELECT t1.*,
+                  t2.media,
+                  (t2.media / CASE WHEN t1.diffGiorni = 0 THEN 1 ELSE t1.diffGiorni END) AS ratio
+             FROM (
+                      SELECT iscrizioni.studente,
+                             cds.cds,
+                             julianday(max(dtappello) ) - julianday(min(dtappello) ) AS diffGiorni
+                        FROM iscrizioni
+                             JOIN
+                             appelli ON iscrizioni.appcod = appelli.appcod
+                             JOIN
+                             cds ON appelli.cdscod = cds.cdscod
+                       WHERE appelli.dtappello IS NOT NULL
+                       GROUP BY iscrizioni.studente
+                       ORDER BY cds.cdscod,
+                                iscrizioni.studente,
+                                appelli.dtappello
+                  )
+                  AS t1
+                  JOIN
+                  (
+                      SELECT iscrizioni.studente,
+                             cds.cds,
+                             avg(iscrizioni.Voto) AS media
+                        FROM iscrizioni
+                             JOIN
+                             appelli ON iscrizioni.appcod = appelli.appcod
+                             JOIN
+                             cds ON appelli.cdscod = cds.cdscod
+                       WHERE appelli.dtappello IS NOT NULL AND 
+                             iscrizioni.Voto IS NOT NULL
+                       GROUP BY iscrizioni.studente
+                       ORDER BY cds.cdscod,
+                                iscrizioni.studente,
+                                appelli.dtappello
+                  )
+                  AS t2 ON t1.studente = t2.studente
+            WHERE ratio >= 0.94350159714953
+            ORDER BY ratio DESC
+       )
+       AS t3
+ GROUP BY t3.cds;
+ 
+
+-- query 5 denormalizzato
+/*
+-- media ratio
+SELECT avg(ratio) AS avg
+  FROM (
+           SELECT t1.*,
+                  t2.media,
+                  (t2.media / CASE WHEN t1.diffGiorni = 0 THEN 1 ELSE t1.diffGiorni END) AS ratio
+             FROM (
+                      SELECT Studente,
+                             CdS,
+                             julianday(max(DtAppello) ) - julianday(min(DtAppello) ) AS diffGiorni
+                        FROM bos_denormalizzato
+                       GROUP BY Studente
+                       ORDER BY CdS,
+                                Studente,
+                                DtAppello
+                  )
+                  AS t1
+                  JOIN
+                  (
+                      SELECT Studente,
+                             CdS,
+                             avg(Voto) AS media
+                        FROM bos_denormalizzato
+                       WHERE Voto IS NOT NULL
+                       GROUP BY Studente
+                       ORDER BY CdS,
+                                Studente,
+                                DtAppello
+                  )
+                  AS t2 ON t1.studente = t2.studente
+            ORDER BY ratio DESC
+       );-- 0.73341637214748
+-- studenti superiori alla media
+SELECT t1.*,
+       t2.media,
+       (t2.media / CASE WHEN t1.diffGiorni = 0 THEN 1 ELSE t1.diffGiorni END) AS ratio
+  FROM (
+           SELECT Studente,
+                  CdS,
+                  julianday(max(DtAppello) ) - julianday(min(DtAppello) ) AS diffGiorni
+             FROM bos_denormalizzato
+            GROUP BY Studente
+            ORDER BY CdS,
+                     Studente,
+                     DtAppello
+       )
+       AS t1
+       JOIN
+       (
+           SELECT Studente,
+                  CdS,
+                  avg(Voto) AS media
+             FROM bos_denormalizzato
+            WHERE Voto IS NOT NULL
+            GROUP BY Studente
+            ORDER BY CdS,
+                     Studente,
+                     DtAppello
+       )
+       AS t2 ON t1.studente = t2.studente
+ WHERE ratio >= 0.73341637214748
+ ORDER BY ratio DESC;
+*/
+SELECT t3.cds,
+       count(t3.cds) AS numStud
+  FROM (
+           SELECT t1.*,
+                  t2.media,
+                  (t2.media / CASE WHEN t1.diffGiorni = 0 THEN 1 ELSE t1.diffGiorni END) AS ratio
+             FROM (
+                      SELECT Studente,
+                             CdS,
+                             julianday(max(DtAppello) ) - julianday(min(DtAppello) ) AS diffGiorni
+                        FROM bos_denormalizzato
+                       GROUP BY Studente
+                       ORDER BY CdS,
+                                Studente,
+                                DtAppello
+                  )
+                  AS t1
+                  JOIN
+                  (
+                      SELECT Studente,
+                             CdS,
+                             avg(Voto) AS media
+                        FROM bos_denormalizzato
+                       WHERE Voto IS NOT NULL
+                       GROUP BY Studente
+                       ORDER BY CdS,
+                                Studente,
+                                DtAppello
+                  )
+                  AS t2 ON t1.studente = t2.studente
+            WHERE ratio >= 0.73341637214748
+            ORDER BY ratio DESC
+       )
+       AS t3
+ GROUP BY t3.cds;
+
+
+-- query 6
+SELECT t3.adcod,
+       ad.ad,
+       round(avg(t3.tot) ) AS TrialAndError
+  FROM (
+           SELECT *
+             FROM (
+                      SELECT *,
+                             count(t1.studente) AS tot
+                        FROM (
+                                 SELECT iscrizioni.studente,
+                                        appelli.appcod,
+                                        appelli.adcod,
+                                        iscrizioni.Superamento,
+                                        iscrizioni.Insufficienza,
+                                        iscrizioni.Ritiro,
+                                        iscrizioni.Voto
+                                   FROM iscrizioni
+                                        JOIN
+                                        appelli ON iscrizioni.appcod = appelli.appcod
+                                  WHERE (iscrizioni.Superamento != 0 OR 
+                                         iscrizioni.Insufficienza != 0 OR 
+                                         iscrizioni.Ritiro != 0 OR 
+                                         iscrizioni.Voto IS NOT NULL) 
+                                  ORDER BY appelli.adcod,
+                                           iscrizioni.studente,
+                                           appelli.appcod DESC
+                             )
+                             AS t1
+                       GROUP BY t1.studente,
+                                t1.adcod
+                  )
+                  AS t2
+            ORDER BY t2.adcod
+       )
+       AS t3
+       JOIN
+       ad ON t3.adcod = ad.adcod
+ GROUP BY t3.adcod
+ ORDER BY TrialAndError DESC, ad.ad
+ LIMIT 3;
+
+
+-- query 6 denormalizzato
+SELECT t3.AdCod,
+       AD,
+       round(avg(t3.tot) ) AS TrialAndError
+  FROM (
+           SELECT *
+             FROM (
+                      SELECT *,
+                             count(t1.Studente) AS tot
+                        FROM (
+                                 SELECT Studente,
+                                        DtAppello,
+                                        AdCod,
+                                        AD,
+                                        Superamento,
+                                        Insufficienza,
+                                        Ritiro,
+                                        Voto
+                                   FROM bos_denormalizzato
+                                  WHERE (Superamento != 0 OR 
+                                         Insufficienza != 0 OR 
+                                         Ritiro != 0 OR 
+                                         Voto IS NOT NULL) 
+                                  ORDER BY AdCod,
+                                           Studente,
+                                           DtAppello DESC
+                             )
+                             AS t1
+                       GROUP BY t1.Studente,
+                                t1.AdCod
+                  )
+                  AS t2
+            ORDER BY t2.AdCod
+       ) as t3
+ GROUP BY t3.AdCod
+ ORDER BY TrialAndError DESC, AD
+ LIMIT 3;
+
+
+-- query 7
+SELECT t1.ad,
+       t1.dtappello,
+       t1.appcod,
+       t1.Media_Voti,
+       round(CAST (t1.Pass AS REAL) / CAST (t1.Tot AS REAL), 2) AS Rapporto
+  FROM (
+           SELECT ad.ad,
+                  appelli.dtappello,
+                  iscrizioni.appcod,
+                  round(avg(iscrizioni.Voto), 2) AS Media_Voti,
+                  sum(iscrizioni.Superamento) AS Pass,
+                  sum(iscrizioni.Superamento + iscrizioni.Insufficienza + iscrizioni.Ritiro) AS Tot
+             FROM appelli
+                  JOIN
+                  ad ON appelli.adcod = ad.adcod
+                  JOIN
+                  iscrizioni ON appelli.appcod = iscrizioni.appcod
+            WHERE iscrizioni.Assenza = 0
+            GROUP BY iscrizioni.appcod
+            ORDER BY ad.ad
+       )
+       AS t1
+ WHERE Rapporto < 0.5 AND 
+       Media_Voti >= 18
+ ORDER BY t1.ad,
+          Rapporto DESC;
+
+
+-- query 7 denormalizzato
+SELECT *
+  FROM (
+           SELECT AD,
+                  DtAppello,
+                  round(avg(Voto), 2) AS Media_Voti,
+                  round(CAST (sum(Superamento) AS REAL) / CAST (sum(Superamento + Insufficienza + Ritiro) AS REAL), 2) AS Rapporto
+             FROM bos_denormalizzato
+            WHERE Assenza = 0
+            GROUP BY AD,
+                     DtAppello
+            ORDER BY AD
+       )
+       AS t1
+ WHERE Rapporto < 0.5 AND 
+       Media_Voti >= 18
+ ORDER BY AD,
+          Rapporto DESC;
