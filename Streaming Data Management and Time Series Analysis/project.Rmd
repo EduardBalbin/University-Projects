@@ -1,0 +1,792 @@
+---
+title: "Project Time Series"
+author: "Gianni Eduard Balbin Canchanya - Matricola 901609"
+date: "2024-09-11"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r warning=TRUE, include=FALSE}
+library(skimr)
+library(lubridate)
+library(tseries)
+library(forecast)
+library(Metrics)
+library(ggplot2)
+library(KFAS)
+library(randomForest)
+library(xgboost)
+library(e1071)
+library(knitr)
+opts_chunk$set(tidy.opts=list(width.cutoff=60),tidy=TRUE)
+```
+
+
+```{r}
+dataset <- read.csv('train_2324.csv')
+head(dataset)
+```
+
+```{r}
+dataset$date <- as.Date(dataset$date, format = "%Y-%m-%d")
+skim_without_charts(dataset) # check variable type
+```
+
+
+```{r}
+# create list of days and month where NA is TRUE
+for(y in list(dataset$date[is.na(dataset$ave_days)])){
+  concatenated_values <- paste('-',month(y),'-',day(y), sep='')
+}
+
+oldDates <- dataset$date[is.na(dataset$ave_days)]
+newAveDay <- c()
+
+# group ave_days for each year if they have same day and month and then calculate the mean to replace the NA value in the same day
+for(x in 1:length(concatenated_values)){
+  for(y in unique(year(dataset$date))){
+    checkDate <- paste(y,concatenated_values[x],sep='')
+    newAveDay <- append(newAveDay, dataset$ave_days[dataset$date == checkDate])
+    checkDate <- ''
+  }
+  newAveDay <- newAveDay[!is.na(newAveDay)]
+  dataset$ave_days[dataset$date == oldDates[x]] <- mean(newAveDay)
+}
+
+# remove temp columns
+rm(concatenated_values, oldDates, newAveDay, checkDate, x, y)
+
+# check if still exists NA values in ave_days
+dataset[is.na(dataset$ave_days),]
+```
+```{r}
+# fix zero value
+for(y in list(dataset$date[dataset$ave_days == 0])){
+  concatenated_values <- paste('-',month(y),'-',day(y), sep='')
+}
+
+oldDates <- dataset$date[dataset$ave_days == 0]
+newAveDay <- c()
+
+# group ave_days for each year if they have same day and month and then calculate the mean to replace the zero value in the same day
+for(x in 1:length(concatenated_values)){
+  for(y in unique(year(dataset$date))){
+    checkDate <- paste(y,concatenated_values[x],sep='')
+    newAveDay <- append(newAveDay, dataset$ave_days[dataset$date == checkDate])
+    checkDate <- ''
+  }
+  newAveDay <- newAveDay[!newAveDay == 0]
+  dataset$ave_days[dataset$date == oldDates[x]] <- min(newAveDay[newAveDay > 0])
+}
+
+# remove temp columns
+rm(concatenated_values, oldDates, newAveDay, checkDate, x, y)
+
+# check if still exists NA values in ave_days
+dataset$ave_days[dataset$ave_days == 0]
+```
+
+
+```{r}
+plot(dataset$date, dataset$ave_days, main = 'Whole dataset', type = 'l', xlab = 'Date', ylab = 'Average Days')
+plot(dataset$date[1:365], dataset$ave_days[1:365], main = 'First Year dataset', type = 'l', xlab = 'Date', ylab = 'Average Days')
+plot(dataset$date[1:30], dataset$ave_days[1:30], main = 'First Month dataset', type = 'l', xlab = 'Date', ylab = 'Average Days')
+plot(dataset$date[1:7], dataset$ave_days[1:7], main = 'First Week dataset', type = 'l', xlab = 'Date', ylab = 'Average Days')
+```
+
+```{r}
+par(mfrow = c(1,2))
+boxplot(dataset$ave_days)
+boxplot(dataset$ave_days, outline = FALSE, ylim = c(0,110))
+```
+
+```{r}
+threshold <- quantile(dataset$ave_days, 0.75, names = FALSE)+1.5*(quantile(dataset$ave_days, 0.75, names = FALSE)-quantile(dataset$ave_days, 0.25, names = FALSE))
+cat("Number of values over threshold:", nrow(dataset[dataset$ave_days > threshold,]))
+head(dataset[dataset$ave_days > threshold,], 6)
+```
+
+```{r}
+# fix outliers
+for(y in list(dataset$date[dataset$ave_days > threshold])){
+  concatenated_values <- paste('-',month(y),'-',day(y), sep='')
+}
+
+oldDates <- dataset$date[dataset$ave_days > threshold]
+newAveDay <- c()
+
+# group ave_days for each year if they have same day and month and then replace it with the max value in the same day
+for(x in 1:length(concatenated_values)){
+  for(y in unique(year(dataset$date))){
+    checkDate <- paste(y,concatenated_values[x],sep='')
+    newAveDay <- append(newAveDay, dataset$ave_days[dataset$date == checkDate])
+    checkDate <- ''
+  }
+  newAveDay <- newAveDay[!newAveDay >= threshold]
+  dataset$ave_days[dataset$date == oldDates[x]] <- max(newAveDay)
+}
+
+# remove temp columns
+rm(concatenated_values, oldDates, newAveDay, checkDate, x, y)
+
+# check if still exists NA values in ave_days
+dataset[dataset$ave_days > threshold, ]
+```
+
+```{r}
+boxplot(dataset$ave_days)
+```
+
+
+
+```{r}
+dataset$month <- as.integer(format(as.Date(dataset$date), "%m"))
+dataset$day_of_week <- as.integer(format(as.Date(dataset$date), "%u"))
+dataset$season <- ifelse(as.numeric(format(dataset$date, "%j")) >= 80 & as.numeric(format(dataset$date, "%j")) <= 171, 1,  # Spring
+               ifelse(as.numeric(format(dataset$date, "%j")) >= 172 & as.numeric(format(dataset$date, "%j")) <= 264, 2, # Summer
+               ifelse(as.numeric(format(dataset$date, "%j")) >= 265 & as.numeric(format(dataset$date, "%j")) <= 354, 3, # Fall
+                      4))) # Winter
+```
+
+
+
+```{r}
+hist(dataset$ave_days)
+```
+
+
+
+```{r}
+ts <- ts(dataset$ave_days, start = c(2007, as.numeric(format(dataset$date[1], "%j"))), frequency = 365)
+
+decomposed <- stl(ts, s.window = "periodic")
+plot(decomposed)
+```
+
+
+```{r}
+weekly_means <- aggregate(ave_days ~ year(date) + week(date), data = dataset, FUN = mean)
+weekly_sd <- aggregate(ave_days ~ year(date) + week(date), data = dataset, FUN = sd)
+
+# Merge the two datasets by year and month
+relation <- merge(weekly_means, weekly_sd, by = c("year(date)", "week(date)"))
+colnames(relation) <- c("year", "week", "mean_ave_days", "sd_ave_days")
+
+# Generate the scatter plot
+ggplot(relation, aes(x = mean_ave_days, y = sd_ave_days)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +
+  labs(title = "Relationship Between Weekly Mean and SD of Ave Days",
+       x = "Weekly Mean of Ave Days", y = "Weekly SD of Ave Days") +
+  theme_minimal()
+```
+
+```{r}
+weekly_means <- aggregate(BoxCox(dataset$ave_days, 0.25) ~ year(date) + week(date), data = dataset, FUN = mean)
+weekly_sd <- aggregate(BoxCox(dataset$ave_days, 0.25) ~ year(date) + week(date), data = dataset, FUN = sd)
+
+# Merge the two datasets by year and month
+relation <- merge(weekly_means, weekly_sd, by = c("year(date)", "week(date)"))
+colnames(relation) <- c("year", "week", "mean_ave_days", "sd_ave_days")
+
+# Generate the scatter plot
+ggplot(relation, aes(x = mean_ave_days, y = sd_ave_days)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +
+  labs(title = "Relationship Between Weekly Mean and SD of Ave Days",
+       x = "Weekly Mean of Ave Days", y = "Weekly SD of Ave Days") +
+  theme_minimal()
+```
+
+
+```{r}
+acf(ts)
+pacf(ts)
+```
+
+
+```{r}
+adf.test(ts)
+```
+
+
+```{r}
+log_ts <- log(ts(dataset$ave_days, start = c(2007, as.numeric(format(dataset$date[1], "%j"))), frequency = 365))
+
+log_decomposed <- stl(log_ts, s.window = "periodic")
+
+plot(log_decomposed)
+```
+
+
+```{r}
+log_weekly_means <- aggregate(log(ave_days) ~ year(date) + week(date), data = dataset, FUN = mean)
+log_weekly_sd <- aggregate(log(ave_days) ~ year(date) + week(date), data = dataset, FUN = sd)
+
+# Merge the two datasets by year and month
+relation <- merge(log_weekly_means, log_weekly_sd, by = c("year(date)", "week(date)"))
+colnames(relation) <- c("year", "week", "mean_ave_days", "sd_ave_days")
+
+# Generate the scatter plot
+ggplot(relation, aes(x = mean_ave_days, y = sd_ave_days)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +
+  labs(title = "Relationship Between Weekly Mean and SD of Ave Days",
+       x = "Weekly Mean of Ave Days", y = "Weekly SD of Ave Days") +
+  theme_minimal()
+```
+
+
+### Split Train And Test sets
+
+```{r}
+# Suddivisione in training (80%) e test (20%)
+train_index <- floor(0.8 * nrow(dataset))
+train_set <- dataset[1:train_index, ]
+train_ts <- ts(train_set$ave_days, start = c(year(train_set$date[1]), as.numeric(format(train_set$date[1], "%j"))), frequency = 365)
+test_set <- dataset[(train_index+1):nrow(dataset), ]
+test_ts <- ts(test_set$ave_days, start = c(year(test_set$date[1]), as.numeric(format(test_set$date[1], "%j"))), frequency = 365)
+
+forecast_dates <- seq(from = test_set$date[1], by = "day", length.out = length(test_set$ave_days))
+
+actual_data <- data.frame(
+  date = test_set$date,
+  ave_days = test_set$ave_days,
+  type = "Actual"
+)
+```
+
+
+
+### Arima model 1.0
+
+```{r}
+# Modello ARIMA (1,1,1)(1,0,1)[7]
+arima_1 <- Arima(train_ts, order = c(1, 1, 1), seasonal = list(order = c(1, 0, 1), period = 7), include.constant = TRUE, lambda = 0.25)
+
+summary(arima_1)
+checkresiduals(arima_1)
+```
+
+```{r}
+forecast_1 <- forecast(arima_1, h = length(test_ts))
+forecast_data_1 <- data.frame(
+  date = forecast_dates,
+  ave_days = as.numeric(forecast_1$mean),
+  type = "Forecast"
+)
+
+combined_data_1 <- rbind(actual_data, forecast_data_1)
+
+# Plot with ggplot2
+ggplot(combined_data_1, aes(x = date, y = ave_days, color = type)) +
+  geom_line(size = 1) +
+  labs(
+    title = "ARIMA 1.0 - Actual vs Forecast",
+    x = "Date",
+    y = "Average Days",
+    color = "Type"
+  ) +
+  scale_color_manual(values = c("Actual" = "blue", "Forecast" = "red")) +
+  theme_minimal() +
+  coord_cartesian(ylim = c(min(combined_data_1$ave_days, na.rm = TRUE), max(combined_data_1$ave_days, na.rm = TRUE)))
+```
+
+
+
+
+### Arima model 2.0
+
+```{r}
+# Modello ARIMA (1,0,0)(1,1,0)[7]
+arima_2 <- Arima(train_ts, order = c(1, 0, 0), seasonal = list(order = c(1, 1, 0), period = 7), include.constant = TRUE, lambda = 0.25)
+
+summary(arima_2)
+checkresiduals(arima_2)
+```
+
+
+```{r}
+forecast_2 <- forecast(arima_2, h = length(test_ts))
+forecast_data_2 <- data.frame(
+  date = forecast_dates,
+  ave_days = as.numeric(forecast_2$mean),
+  type = "Forecast"
+)
+
+combined_data_2 <- rbind(actual_data, forecast_data_2)
+
+# Plot with ggplot2
+ggplot(combined_data_2, aes(x = date, y = ave_days, color = type)) +
+  geom_line(size = 1) +
+  labs(
+    title = "ARIMA 2.0 - Actual vs Forecast",
+    x = "Date",
+    y = "Average Days",
+    color = "Type"
+  ) +
+  scale_color_manual(values = c("Actual" = "blue", "Forecast" = "red")) +
+  theme_minimal() +
+  coord_cartesian(ylim = c(min(combined_data_2$ave_days, na.rm = TRUE), max(combined_data_2$ave_days, na.rm = TRUE)))
+```
+
+
+
+### Arima model 3.0
+
+```{r}
+# Modello ARIMA (0,1,2)(0,1,1)[7]
+arima_3 <- Arima(train_ts, order = c(0, 1, 2), seasonal = list(order = c(0, 1, 1), period = 7), include.constant = TRUE, lambda = 0.25)
+
+summary(arima_3)
+checkresiduals(arima_3)
+```
+
+
+```{r}
+forecast_3 <- forecast(arima_3, h = length(test_ts))
+forecast_data_3 <- data.frame(
+  date = forecast_dates,
+  ave_days = as.numeric(forecast_3$mean),
+  type = "Forecast"
+)
+
+combined_data_3 <- rbind(actual_data, forecast_data_3)
+
+# Plot with ggplot2
+ggplot(combined_data_3, aes(x = date, y = ave_days, color = type)) +
+  geom_line(size = 1) +
+  labs(
+    title = "ARIMA 3.0 - Actual vs Forecast",
+    x = "Date",
+    y = "Average Days",
+    color = "Type"
+  ) +
+  scale_color_manual(values = c("Actual" = "blue", "Forecast" = "red")) +
+  theme_minimal() +
+  coord_cartesian(ylim = c(min(combined_data_3$ave_days, na.rm = TRUE), max(combined_data_3$ave_days, na.rm = TRUE)))
+```
+
+### Confronto e Forecast date
+
+```{r}
+aic_bic_arima <- data.frame(
+  Models = c("Arima 1.0", "Arima 2.0", "Arima 3.0"),
+  AIC = c(AIC(arima_1), AIC(arima_2), AIC(arima_3)),
+  BIC = c(BIC(arima_1), BIC(arima_2), BIC(arima_3))
+)
+aic_bic_arima
+```
+
+
+
+```{r}
+ts_forecast_1 <- ts(forecast_1$mean, start = c(year(test_set$date[1]), as.numeric(format(test_set$date[1], "%j"))), frequency = 365)
+ts_forecast_2 <- ts(forecast_2$mean, start = c(year(test_set$date[1]), as.numeric(format(test_set$date[1], "%j"))), frequency = 365)
+ts_forecast_3 <- ts(forecast_3$mean, start = c(year(test_set$date[1]), as.numeric(format(test_set$date[1], "%j"))), frequency = 365)
+
+mae_arima <- data.frame(
+  Models = c("Arima 1.0", "Arima 2.0", "Arima 3.0"),
+  MAE = c(mae(test_ts, ts_forecast_1), mae(test_ts, ts_forecast_2), mae(test_ts, ts_forecast_3))
+)
+mae_arima
+```
+
+
+
+```{r}
+# Calcolo il numero di giorni da prevedere
+forecast_start <- as.Date("2015-04-01")
+forecast_end <- as.Date("2015-11-07")
+days_to_forecast <- as.numeric(forecast_end - forecast_start) + 1
+
+# Preparo le date per il nuovo forecast
+new_forecast_dates <- seq(from = forecast_start, by = "day", length.out = days_to_forecast)
+
+# 1. ARIMA Forecast usando il modello esistente arima_2
+# Usa direttamente il modello arima_2 già creato
+arima_forecast <- forecast(arima_2, h = days_to_forecast)
+
+forecast_arima <- data.frame(
+  date = new_forecast_dates,
+  ave_days = as.numeric(arima_forecast$mean)
+)
+
+ggplot(data = dataset, aes(x = date, y = ave_days)) + 
+  geom_line(color = "blue") + 
+  geom_line(data = forecast_arima, aes(y = ave_days), color = "red") +
+  labs(title = "ARIMA Forecast", x = "Date", y = "Average Daily Values")
+
+ggplot(data = tail(dataset, 365), aes(x = date, y = ave_days)) + 
+  geom_line(color = "blue") + 
+  geom_line(data = forecast_arima, aes(y = ave_days), color = "red") +
+  labs(title = "ARIMA Forecast", x = "Date", y = "Average Daily Values")
+```
+
+
+
+### UCM 1.0
+
+```{r}
+# Model 1: Local level + seasonality
+ucm_1 <- SSModel(train_ts ~ SSMtrend(1, Q = NA) + SSMseasonal(7, Q = NA))
+ucm_1 <- fitSSM(ucm_1, inits = c(0.1, 0.1), method = "BFGS")
+ucm_1$model
+```
+
+```{r}
+ucm_predictions <- data.frame(
+  date = forecast_dates,
+  ave_days = as.numeric(predict(ucm_1$model, n.ahead = length(test_ts))),
+  type = "Forecast"
+)
+
+combined_data_ucm <- rbind(actual_data, ucm_predictions)
+
+# Plot with ggplot2
+ggplot(combined_data_ucm, aes(x = date, y = ave_days, color = type)) +
+  geom_line(size = 1) +
+  labs(
+    title = "UCM 1.0 - Actual vs Forecast",
+    x = "Date",
+    y = "Average Days",
+    color = "Type"
+  ) +
+  scale_color_manual(values = c("Actual" = "blue", "Forecast" = "red")) +
+  theme_minimal() +
+  coord_cartesian(ylim = c(min(combined_data_ucm$ave_days, na.rm = TRUE), max(combined_data_ucm$ave_days, na.rm = TRUE))) # Adjust scale
+```
+
+
+### UCM 2.0
+
+
+```{r}
+# Model 2: Local level + slope + seasonality
+ucm_2 <- SSModel(train_ts ~ SSMtrend(degree = 2, Q = list(NA, NA)) + SSMseasonal(7, Q = NA))
+ucm_2 <- fitSSM(ucm_2, inits = c(0.1, 0.1, 0.1), method = "BFGS")
+ucm_2$model
+```
+
+
+```{r}
+ucm_predictions <- data.frame(
+  date = forecast_dates,
+  ave_days = as.numeric(predict(ucm_2$model, n.ahead = length(test_ts))),
+  type = "Forecast"
+)
+
+combined_data_ucm <- rbind(actual_data, ucm_predictions)
+
+# Plot with ggplot2
+ggplot(combined_data_ucm, aes(x = date, y = ave_days, color = type)) +
+  geom_line(size = 1) +
+  labs(
+    title = "UCM 2.0 - Actual vs Forecast",
+    x = "Date",
+    y = "Average Days",
+    color = "Type"
+  ) +
+  scale_color_manual(values = c("Actual" = "blue", "Forecast" = "red")) +
+  theme_minimal() +
+  coord_cartesian(ylim = c(min(combined_data_ucm$ave_days, na.rm = TRUE), max(combined_data_ucm$ave_days, na.rm = TRUE))) # Adjust scale
+```
+
+
+
+### UCM 3.0
+
+```{r}
+# Model 3: Local level + Trend + Two seasonal components
+ucm_3 <- SSModel(train_ts ~ SSMtrend(1, Q = NA) + SSMseasonal(7, Q = NA) + SSMseasonal(30, Q = NA))
+ucm_3 <- fitSSM(ucm_3, inits = c(0.1, 0.1, 0.1, 0.1, 0.1), method = "BFGS")
+ucm_3$model
+```
+
+```{r}
+ucm_predictions <- data.frame(
+  date = forecast_dates,
+  ave_days = as.numeric(predict(ucm_3$model, n.ahead = length(test_ts))),
+  type = "Forecast"
+)
+
+combined_data_ucm <- rbind(actual_data, ucm_predictions)
+
+# Plot with ggplot2
+ggplot(combined_data_ucm, aes(x = date, y = ave_days, color = type)) +
+  geom_line(size = 1) +
+  labs(
+    title = "UCM 3.0 - Actual vs Forecast",
+    x = "Date",
+    y = "Average Days",
+    color = "Type"
+  ) +
+  scale_color_manual(values = c("Actual" = "blue", "Forecast" = "red")) +
+  theme_minimal() +
+  coord_cartesian(ylim = c(min(combined_data_ucm$ave_days, na.rm = TRUE), max(combined_data_ucm$ave_days, na.rm = TRUE))) # Adjust scale
+```
+
+
+### Confronto e Forecast date
+
+
+```{r}
+# Model 1
+log_likelihood_model_1 <- logLik(ucm_1$model)
+k_model_1 <- length(ucm_1$model$u) + 1  # 1 parameter for trend + 1 for H
+n_model_1 <- length(ucm_1$model$y)
+
+AIC_model_1 <- 2 * k_model_1 - 2 * log_likelihood_model_1
+BIC_model_1 <- log(n_model_1) * k_model_1 - 2 * log_likelihood_model_1
+
+# Model 2
+log_likelihood_model_2 <- logLik(ucm_2$model)
+k_model_2 <- length(ucm_2$model$u) + 2  # 1 parameter for trend + 1 for seasonal + 1 for H
+n_model_2 <- length(ucm_2$model$y)
+
+AIC_model_2 <- 2 * k_model_2 - 2 * log_likelihood_model_2
+BIC_model_2 <- log(n_model_2) * k_model_2 - 2 * log_likelihood_model_2
+
+# Model 3
+log_likelihood_model_3 <- logLik(ucm_3$model)
+k_model_3 <- length(ucm_3$model$u) + 2  # 1 parameter for trend + 1 for seasonal + 1 for H
+n_model_3 <- length(ucm_3$model$y)
+
+AIC_model_3 <- 2 * k_model_3 - 2 * log_likelihood_model_3
+BIC_model_3 <- log(n_model_3) * k_model_3 - 2 * log_likelihood_model_3
+
+
+aic_bic_ucm <- data.frame(
+  Models = c("UCM 1.0", "UCM 2.0", "UCM 3.0"),
+  AIC = c(AIC_model_1, AIC_model_2, AIC_model_3),
+  BIC = c(BIC_model_1, BIC_model_2, BIC_model_3)
+)
+aic_bic_ucm
+```
+
+
+
+```{r warning=FALSE}
+# Evaluate UCM models
+ucm_models <- list(ucm_1$model, ucm_2$model, ucm_3$model)
+ucm_mae <- sapply(ucm_models, function(model) {
+  pred <- predict(model, n.ahead = length(test_ts))
+  mean(abs(pred - test_ts))
+})
+mae_ucm <- data.frame(
+  Models = c("UCM 1.0", "UCM 2.0", "UCM 3.0"),
+  MAE = c(ucm_mae[1], ucm_mae[2], ucm_mae[3])
+)
+mae_ucm
+```
+
+
+
+```{r}
+ucm_forecast <- predict(ucm_2$model, n.ahead = days_to_forecast)
+
+forecast_ucm <- data.frame(
+  date = new_forecast_dates,
+  ave_days = as.numeric(ucm_forecast)
+)
+
+ggplot(data = dataset, aes(x = date, y = ave_days)) + 
+  geom_line(color = "blue") + 
+  geom_line(data = forecast_ucm, aes(y = ave_days), color = "red") +
+  labs(title = "UCM Forecast", x = "Date", y = "Average Daily Values")
+
+ggplot(data = tail(dataset, 365), aes(x = date, y = ave_days)) + 
+  geom_line(color = "blue") + 
+  geom_line(data = forecast_ucm, aes(y = ave_days), color = "red") +
+  labs(title = "UCM Forecast", x = "Date", y = "Average Daily Values")
+```
+
+
+
+### Machine Learning Model
+
+
+```{r}
+# divisione train e test senza ts
+train_ml <- dataset[1:train_index, ]
+test_ml <- dataset[(train_index + 1):nrow(dataset), ]
+```
+
+### Machine Learning Model 1.0 - Random Forest
+
+```{r}
+# Impostazione della seed per la riproducibilità
+set.seed(123)
+
+# Creazione del modello Random Forest
+rf_model <- randomForest(ave_days ~ month + day_of_week + season, data = train_ml)
+
+# Sommario del modello
+print(rf_model)
+
+# Previsioni con il modello Random Forest
+rf_predictions <- predict(rf_model, test_ml)
+```
+
+```{r}
+# Create a data frame for plotting
+comparison_df <- data.frame(
+  Date = test_ml$date,
+  Actual = test_ml$ave_days,
+  Predicted = rf_predictions
+)
+
+
+ggplot(comparison_df, aes(x = Date)) +
+  geom_line(aes(y = Actual, color = "Actual"), size = 1) +
+  geom_line(aes(y = Predicted, color = "Predicted"), size = 1) +
+  labs(
+    title = "Random Forest Predictions vs. Actual Values",
+    x = "Date",
+    y = "Average Days",
+    color = "Legend"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = c("Actual" = "blue", "Predicted" = "red"))
+```
+
+
+
+### Machine Learning Model 2.0 - XGBoost
+
+```{r}
+# Preparazione dei dati per XGBoost (convertire in formato matriciale)
+xgb_train <- xgb.DMatrix(data = as.matrix(train_ml[, c("month", "day_of_week", "season")]), label = train_ml$ave_days)
+xgb_test <- xgb.DMatrix(data = as.matrix(test_ml[, c("month", "day_of_week", "season")]), label = test_ml$ave_days)
+
+# Creazione del modello XGBoost
+xgb_model <- xgboost(data = xgb_train, max_depth = 3, nrounds = 100, objective = "reg:squarederror", verbose = 0)
+
+# Previsioni con il modello XGBoost
+xgb_predictions <- predict(xgb_model, xgb_test)
+```
+
+```{r}
+# Create a data frame for plotting
+comparison_df <- data.frame(
+  Date = test_ml$date,
+  Actual = test_ml$ave_days,
+  Predicted = xgb_predictions
+)
+
+
+ggplot(comparison_df, aes(x = Date)) +
+  geom_line(aes(y = Actual, color = "Actual"), size = 1) +
+  geom_line(aes(y = Predicted, color = "Predicted"), size = 1) +
+  labs(
+    title = "XGBoost Predictions vs. Actual Values",
+    x = "Date",
+    y = "Average Days",
+    color = "Legend"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = c("Actual" = "blue", "Predicted" = "red"))
+```
+
+
+### Machine Learning Model 3.0 - Support Vector Machine
+
+```{r}
+# Creazione del modello SVM per la regressione
+svm_model <- svm(ave_days ~ month + day_of_week + season, data = train_ml)
+
+# Sommario del modello SVM
+summary(svm_model)
+
+# Previsioni con il modello SVM
+svm_predictions <- predict(svm_model, test_ml)
+```
+
+```{r}
+# Create a data frame for plotting
+comparison_df <- data.frame(
+  Date = test_ml$date,
+  Actual = test_ml$ave_days,
+  Predicted = svm_predictions
+)
+
+
+ggplot(comparison_df, aes(x = Date)) +
+  geom_line(aes(y = Actual, color = "Actual"), size = 1) +
+  geom_line(aes(y = Predicted, color = "Predicted"), size = 1) +
+  labs(
+    title = "SVM Predictions vs. Actual Values",
+    x = "Date",
+    y = "Average Days",
+    color = "Legend"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = c("Actual" = "blue", "Predicted" = "red"))
+```
+
+
+
+### Confronto e Forecast date
+
+```{r}
+# Valutazione delle previsioni (MAE)
+mae_rf <- mean(abs(rf_predictions - test_ml$ave_days))
+
+# Valutazione delle previsioni (MAE)
+mae_xgb <- mean(abs(xgb_predictions - test_ml$ave_days))
+
+# Valutazione delle previsioni (MSE, RMSE, MAE)
+mae_svm <- mean(abs(svm_predictions - test_ml$ave_days))
+
+mae_ml <- data.frame(
+  Models = c("Random Forest", "XGBoost", "Support Vector Machine"),
+  MAE = c(mae_rf, mae_xgb, mae_svm)
+)
+mae_ml
+```
+
+
+
+```{r}
+new_forecast_data <- data.frame(
+  date = new_forecast_dates,
+  weekday = weekdays(new_forecast_dates),
+  month = as.integer(format(new_forecast_dates, "%m")),
+  day_of_week = as.integer(format(new_forecast_dates, "%u")),
+  season = ifelse(as.numeric(format(new_forecast_dates, "%j")) >= 80 & as.numeric(format(new_forecast_dates, "%j")) <= 171, 1,  # Spring
+               ifelse(as.numeric(format(new_forecast_dates, "%j")) >= 172 & as.numeric(format(new_forecast_dates, "%j")) <= 264, 2, # Summer
+               ifelse(as.numeric(format(new_forecast_dates, "%j")) >= 265 & as.numeric(format(new_forecast_dates, "%j")) <= 354, 3, # Fall
+                      4))) # Winter
+)
+
+xgb_forecast <- predict(xgb_model, as.matrix(new_forecast_data[, c("month", "day_of_week", "season")]))
+
+
+forecast_ml <- data.frame(
+  date = new_forecast_dates,
+  ave_days = as.numeric(xgb_forecast)
+)
+
+ggplot(data = dataset, aes(x = date, y = ave_days)) + 
+  geom_line(color = "blue") + 
+  geom_line(data = forecast_ml, aes(y = ave_days), color = "red") +
+  labs(title = "XGBoost Forecast", x = "Date", y = "Average Daily Values")
+
+ggplot(data = tail(dataset, 365), aes(x = date, y = ave_days)) + 
+  geom_line(color = "blue") + 
+  geom_line(data = forecast_ml, aes(y = ave_days), color = "red") +
+  labs(title = "XGBoost Forecast", x = "Date", y = "Average Daily Values")
+```
+
+
+```{r}
+final_csv <- data.frame("Date" = new_forecast_data$date,
+                        "ARIMA" = forecast_arima$ave_days,
+                        "UCM" = forecast_ucm$ave_days,
+                        "ML" = forecast_ml$ave_days)
+write.csv2(final_csv, "901609_20250116.csv")
+```
+
+
